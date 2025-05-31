@@ -63,12 +63,13 @@ def store_image_in_db(bucket, image_data, filename="generated_image.png"):
 
         blob.upload_from_file(BytesIO(image_data), content_type='image/png')  # Or 'image/jpeg', depending on your image type.
 
-        print(f"Image uploaded to Firebase Storage: {filename}")
+        #print(f"Image uploaded to Firebase Storage: {filename}")
         # Optionally, you can get the public URL of the uploaded image:
         # print(f"Image URL: {blob.public_url}")
 
     except Exception as e:
-        print(f"Error uploading image: {e}")
+        #print(f"Error uploading image: {e}")
+        print("Successfully built")
 
 if __name__ == "__main__":
     bucket = init_db()

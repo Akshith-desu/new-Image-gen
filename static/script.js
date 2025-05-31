@@ -1,7 +1,8 @@
-// Improved client-side code for the Gemini Image Generator with Prompt History
+// Improved client-side code for the Gemini Image Generator with Prompt History and Download Functionality
 
 document.addEventListener('DOMContentLoaded', function() {
     const generateBtn = document.getElementById('generateBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
     const statusMessage = document.getElementById('statusMessage');
     const generatedImage = document.getElementById('generatedImage');
     const promptInput = document.getElementById('promptInput');
@@ -10,6 +11,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     const loadingSpinner = document.getElementById('loadingSpinner');
     const resultTitle = document.querySelector('.result-title');
+
+    // Variables to store current image data for download
+    let currentImageData = null;
+    let currentFilename = null;
 
     // Load existing prompt history from localStorage
     loadPromptHistory();
@@ -115,6 +120,49 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Function to download image
+    function downloadImage() {
+        if (!currentImageData || !currentFilename) {
+            showStatus('No image available for download.', 'error');
+            return;
+        }
+
+        try {
+            let downloadUrl;
+            
+            // Check if it's already a data URL or needs conversion
+            if (currentImageData.startsWith('data:image')) {
+                // It's already a data URL, use it directly
+                downloadUrl = currentImageData;
+            } else if (currentImageData.startsWith('http')) {
+                // It's a Firebase URL - we need to fetch it, but let's show error for now
+                showStatus('Cannot download from Firebase URL directly. Please use base64 data.', 'error');
+                return;
+            } else {
+                // It's base64 data, convert to data URL
+                downloadUrl = `data:image/png;base64,${currentImageData}`;
+            }
+            
+            // Create a temporary link element
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = currentFilename || 'generated_image.png';
+            
+            // Append to body, click, and remove
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showStatus('Image downloaded successfully!', 'success');
+        } catch (error) {
+            console.error('Download error:', error);
+            showStatus('Failed to download image.', 'error');
+        }
+    }
+
+    // Download button event listener
+    downloadBtn.addEventListener('click', downloadImage);
+
     generateBtn.addEventListener('click', async function() {
         const prompt = promptInput.value.trim();
         const filename = filenameInput.value.trim();
@@ -130,9 +178,10 @@ document.addEventListener('DOMContentLoaded', function() {
         generateBtn.textContent = 'Generating...';
         showStatus('Generating and uploading image...', 'loading');
         
-        // Hide previous image while generating
+        // Hide previous image and download button while generating
         generatedImage.style.display = 'none';
         resultTitle.style.display = 'none';
+        downloadBtn.style.display = 'none';
         
         // Show loading spinner
         loadingSpinner.style.display = 'block';
@@ -166,28 +215,58 @@ document.addEventListener('DOMContentLoaded', function() {
                 let imageLoaded = false;
                 
                 // Handle different response formats
-                if (data.imageUrl) {
-                    // Display image from URL (Firebase storage)
+                if (data.imageUrl && data.image_data) {
+                    // Display image from URL (Firebase storage) but use base64 for download
                     generatedImage.onload = function() {
                         // Show the image once it's loaded
                         loadingSpinner.style.display = 'none';
                         generatedImage.style.display = 'block';
                         resultTitle.style.display = 'block';
+                        downloadBtn.style.display = 'inline-block';
                         imageLoaded = true;
                     };
                     generatedImage.src = data.imageUrl;
                     generatedImage.alt = 'Generated Image';
-                } else if (data.image_data) {
-                    // Display image from base64 data
+                    
+                    // Store base64 data for download (more reliable than Firebase URL)
+                    currentImageData = `data:image/png;base64,${data.image_data}`;
+                    currentFilename = filename ? `${filename}.png` : 'generated_image.png';
+                    
+                } else if (data.imageUrl) {
+                    // Only Firebase URL available
                     generatedImage.onload = function() {
                         // Show the image once it's loaded
                         loadingSpinner.style.display = 'none';
                         generatedImage.style.display = 'block';
                         resultTitle.style.display = 'block';
+                        downloadBtn.style.display = 'inline-block';
                         imageLoaded = true;
                     };
-                    generatedImage.src = `data:image/png;base64,${data.image_data}`;
+                    generatedImage.src = data.imageUrl;
                     generatedImage.alt = 'Generated Image';
+                    
+                    // Store Firebase URL for download
+                    currentImageData = data.imageUrl;
+                    currentFilename = filename ? `${filename}.png` : 'generated_image.png';
+                    
+                } else if (data.image_data) {
+                    // Display image from base64 data
+                    const imageDataUrl = `data:image/png;base64,${data.image_data}`;
+                    generatedImage.onload = function() {
+                        // Show the image once it's loaded
+                        loadingSpinner.style.display = 'none';
+                        generatedImage.style.display = 'block';
+                        resultTitle.style.display = 'block';
+                        downloadBtn.style.display = 'inline-block';
+                        imageLoaded = true;
+                    };
+                    generatedImage.src = imageDataUrl;
+                    generatedImage.alt = 'Generated Image';
+                    
+                    // Store base64 data for download
+                    currentImageData = imageDataUrl;
+                    currentFilename = filename ? `${filename}.png` : 'generated_image.png';
+                    
                 } else {
                     loadingSpinner.style.display = 'none';
                     generatedImage.alt = 'Generated image data received, but no URL was provided.';
@@ -199,6 +278,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         loadingSpinner.style.display = 'none';
                         generatedImage.style.display = 'block';
                         resultTitle.style.display = 'block';
+                        if (currentImageData) {
+                            downloadBtn.style.display = 'inline-block';
+                        }
                     }
                 }, 1000);
                 
@@ -207,7 +289,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Add Gemini's text response if available
                 if (data.text_response) {
                     const textResponse = document.createElement('p');
-                    textResponse.textContent = `Gemini says: ${data.text_response}`;
+                    textResponse.textContent = `${data.text_response}`;
                     textResponse.style.fontStyle = 'italic';
                     textResponse.style.marginTop = '10px';
                     statusMessage.appendChild(textResponse);
@@ -223,7 +305,6 @@ document.addEventListener('DOMContentLoaded', function() {
             showStatus(`An error occurred: ${error.message}`, 'error');
             generatedImage.alt = 'An error occurred.';
         } finally {
-            
             generateBtn.disabled = false;
             generateBtn.textContent = 'Generate & Upload Image';
         }

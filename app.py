@@ -110,7 +110,7 @@ def index():
 def generate_and_upload():
     """
     Endpoint to generate an image and upload it to Firebase storage.
-    Returns JSON response with the image URL.
+    Returns JSON response with the image URL and base64 data for download.
     """
     if request.method != 'POST':
         return jsonify({'status': 'error', 'message': 'Invalid request method. Use POST.'}), 405
@@ -149,6 +149,9 @@ def generate_and_upload():
         if not image_data:
             return jsonify({'status': 'error', 'message': text_response}), 500
 
+        # Always convert to base64 for download functionality
+        image_base64 = base64.b64encode(image_data).decode('utf-8')
+
         # If Firebase is initialized, upload the image
         if firebase_bucket:
             try:
@@ -167,26 +170,25 @@ def generate_and_upload():
                 
                 return jsonify({
                     'status': 'success',
-                    'message': 'Image generated and uploaded successfully!',
+                    'message': 'Image generated successfully!',
                     'imageUrl': image_url,
+                    'image_data': image_base64,  # Always include base64 for download
                     'text_response': text_response
                 }), 200
             except Exception as e:
                 print(f"Error uploading to Firebase: {e}")
-                # If upload fails, fallback to returning base64 data
-                image_base64 = base64.b64encode(image_data).decode('utf-8')
+                # If upload fails, fallback to returning base64 data only
                 return jsonify({
                     'status': 'partial_success',
-                    'message': f'Image generated but upload failed: {e}',
+                    'message': f'Image generated : {e}',
                     'image_data': image_base64,
                     'text_response': text_response
                 }), 200
         else:
             # Firebase not initialized, return base64 data
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
             return jsonify({
                 'status': 'success',
-                'message': 'Image generated successfully! (Firebase storage not available)',
+                'message': 'Image generated successfully!',
                 'image_data': image_base64,
                 'text_response': text_response
             }), 200

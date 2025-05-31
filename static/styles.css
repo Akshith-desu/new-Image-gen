@@ -366,3 +366,31 @@ button:hover {
         font-size: 1rem;
     }
 }
+
+/* Add this to your existing styles.css file */
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 20px 0;
+}
+
+#downloadBtn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+#downloadBtn:hover {
+    background-color: #218838;
+}
+
+#downloadBtn:active {
+    background-color: #1e7e34;
+}

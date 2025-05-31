@@ -8,7 +8,7 @@
     <link rel="icon" href="{{ url_for('static_files', filename='favicon.ico') }}" type="image/x-icon">
 </head>
 <body>
-    <div class="app-container">
+<div class="app-container">
         <!-- New Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
@@ -38,7 +38,10 @@
                 <div class="helper-text">A timestamp and .png will be added automatically.</div>
             </div>
 
-            <button id="generateBtn">Generate & Upload Image</button>
+            <div class="button-group">
+                <button id="generateBtn">Generate & Upload Image</button>
+                <button id="downloadBtn" style="display: none;">Download Image</button>
+            </div>
 
             <div id="statusMessage" class="success-message" style="display: none;"></div>
 
