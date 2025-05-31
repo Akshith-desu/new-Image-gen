@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Image Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='styles.css') }}">
+    <link rel="icon" href="{{ url_for('static_files', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <div class="app-container">
+        <!-- New Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>Prompt History</h3>
+                <button id="clearHistoryBtn" class="clear-btn" title="Clear History">
+                    <span>×</span>
+                </button>
+            </div>
+            <div class="history-list" id="promptHistory">
+                <!-- History items will be added here dynamically -->
+                <div class="empty-history">No prompt history yet</div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="container">
+            <h1>AI Image Generator</h1>
+
+            <div class="form-group">
+                <label for="promptInput">Image Prompt:</label>
+                <textarea id="promptInput" rows="4" cols="50" placeholder="Enter a description for the image (e.g., A heavy machinery steel cutter in a factory environment)"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="filenameInput">Save As (optional base name):</label>
+                <input type="text" id="filenameInput" placeholder="e.g., steel_cutter">
+                <div class="helper-text">A timestamp and .png will be added automatically.</div>
+            </div>
+
+            <button id="generateBtn">Generate & Upload Image</button>
+
+            <div id="statusMessage" class="success-message" style="display: none;"></div>
+
+            <!-- Enhanced image display area -->
+            <div class="result-container">
+                <h2 class="result-title" style="display: none;">Generated Image</h2>
+                <div class="image-container">
+                    <div class="image-card">
+                        <img id="generatedImage" src="" alt="Generated Image will appear here" style="display: none;">
+                        <!-- Loading spinner -->
+                        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="image-info" id="imageInfo" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static_files', filename='script.js') }}"></script>
+</body>
+</html>
