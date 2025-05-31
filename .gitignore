@@ -1,14 +1,6 @@
 .env
-
+.gitignore
 __pycache__/
 service_account_key.json
-backend/.env
-backend/__pycache__/
-backend/service_account_key.json
-image-gen
-image-gen/__pycache__/
-image-gen/backend/.env
-image-gen/backend/__pycache__/
-image-gen/backend/service_account_key.json
-static
-templates
+
+
