@@ -4,9 +4,12 @@ from firebase_admin import credentials, storage
 from dotenv import load_dotenv 
 from flask import Flask, jsonify, request 
 
-api_key = 'AIzaSyA7r0RW7ROZ2F06q3COl3YR-qvLy8WmRBs'
-
 load_dotenv()
+
+# Load API key from environment variable
+api_key = os.environ.get('GEMINI_API_KEY')
+if not api_key:
+    print("Warning: GEMINI_API_KEY not found in environment variables.")
 # needs to be tested
 app = Flask(__name__)
 
@@ -52,7 +55,7 @@ def list_files_in_folder(bucket, folder_path):
         of a file, or None if an error occurs, or an empty list if no files found.
     """
     if not bucket:
-        print("Error: Firebase bucket is not initialized.")
+        # print("Error: Firebase bucket is not initialized.")
         return None
     print(f"\nAttempting to list files in folder: {folder_path}")
     try:
