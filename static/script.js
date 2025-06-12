@@ -339,9 +339,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
                 }, 1000);
-                
-                showStatus(data.message || 'Image generated successfully!', 'success');
-                
+
+                showStatus('Image generated successfully!', 'success');
+
                 // Add Gemini's text response if available
                 if (data.text_response) {
                     const textResponse = document.createElement('p');
