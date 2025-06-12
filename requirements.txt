@@ -6,4 +6,4 @@ python-dotenv>=1.0.0
 gunicorn
 google-generativeai
 google-cloud-storage
-google-cloud-secret-manager==2.16.5 
+google-cloud-secret-manager==2.24.0
