@@ -2,6 +2,7 @@ import os
 import io
 from datetime import datetime
 import re
+import json
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from dotenv import load_dotenv
 
@@ -11,8 +12,9 @@ from google.genai import types
 import base64
 
 from PIL import Image
-from firebase_admin import credentials, initialize_app, storage
+from firebase_admin import credentials, initialize_app, storage, firestore
 import firebase_admin
+from google.cloud import secretmanager
 
 # Load environment variables
 load_dotenv()
@@ -21,34 +23,113 @@ api_key = os.environ.get('GEMINI_API_KEY')
 # Initialize Flask app
 app = Flask(__name__)
 firebase_bucket = None  # Global variable for Firebase bucket
+db = None  # Global variable for Firestore database
+
+# Firebase configuration
+PROJECT_ID = "image-gen-34b6b"
+SECRET_ID = "firebase-agents-creds"
+SECRET_VERSION_ID = "latest"
+
+def access_secret_version(project_id, secret_id, version_id):
+    """Access the secret version and return its payload."""
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode('UTF-8')
+    except Exception as e:
+        print(f"Error accessing Secret Manager secret '{secret_id}': {e}")
+        return None
 
 def initialize_firebase():
     """
-    Initializes the Firebase Admin SDK and gets the storage bucket.
+    Initializes the Firebase Admin SDK and gets the storage bucket and Firestore database.
     """
-    global firebase_bucket
+    global firebase_bucket, db
+    
     if not firebase_admin._apps:
+        print("Attempting to initialize Firebase Admin SDK...")
+        credentials_json_string = None
+        cred = None
+
+        # Try to get credentials from Secret Manager first
+        if PROJECT_ID and SECRET_ID and SECRET_VERSION_ID:
+            credentials_json_string = access_secret_version(PROJECT_ID, SECRET_ID, SECRET_VERSION_ID)
+
+        if credentials_json_string:
+            try:
+                cred = credentials.Certificate(json.loads(credentials_json_string))
+                firebase_app = initialize_app(
+                    cred,
+                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                )
+                print("Successfully initialized Firebase with Secret Manager credentials.")
+            except Exception as e:
+                print(f"ERROR initializing Firebase with Secret Manager credentials: {str(e)}")
+                print("Attempting to initialize Firebase with service account file.")
+                try:
+                    cred = credentials.Certificate("service_account_key.json")
+                    firebase_app = initialize_app(
+                        cred,
+                        {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                    )
+                    print("Successfully initialized Firebase with service account file.")
+                except Exception as e_file:
+                    print(f"ERROR initializing Firebase with service account file: {str(e_file)}")
+                    print("Attempting to initialize Firebase with application default credentials.")
+                    try:
+                        firebase_app = initialize_app({
+                            'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'
+                        })
+                        print("Successfully initialized Firebase with application default credentials.")
+                    except Exception as e_default:
+                        print(f"ERROR initializing Firebase with application default credentials: {str(e_default)}")
+                        print("Firebase initialization failed entirely.")
+                        return
+        else:
+            print("Secret Manager credentials not available. Attempting service account file.")
+            try:
+                cred = credentials.Certificate("service_account_key.json")
+                firebase_app = initialize_app(
+                    cred,
+                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                )
+                print("Successfully initialized Firebase with service account file.")
+            except Exception as e_file:
+                print(f"ERROR initializing Firebase with service account file: {str(e_file)}")
+                print("Attempting to initialize Firebase with application default credentials.")
+                try:
+                    firebase_app = initialize_app({
+                        'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'
+                    })
+                    print("Successfully initialized Firebase with application default credentials.")
+                except Exception as e_default:
+                    print(f"ERROR initializing Firebase with application default credentials: {str(e_default)}")
+                    print("Firebase initialization failed entirely.")
+                    return
+
+        # Initialize storage bucket
         try:
-            cred = credentials.Certificate("service_account_key.json")
-            firebase_app = initialize_app(
-                cred,
-                {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
-            )
-            firebase_bucket = storage.bucket(app=firebase_app)
-            print("Firebase Admin SDK initialized successfully.")
+            firebase_bucket = storage.bucket(app=firebase_admin.get_app())
+            print("Successfully connected to Firebase Storage")
         except Exception as e:
-            print(f"Error initializing Firebase Admin SDK: {e}")
-            # It's often better to raise an exception here, so the app doesn't try to run with a broken Firebase setup.
-            # raise e
-            return  # IMPORTANT: Exit the function on error
+            print(f"Error getting Firebase bucket: {e}")
+
+        # Initialize Firestore database
+        try:
+            db = firestore.client(database_id="prompts-saved")
+            print("Successfully connected to Firestore database")
+        except Exception as e:
+            print(f"ERROR connecting to Firestore: {str(e)}")
+            print("Firestore client could not be created.")
     else:
         print("Firebase Admin SDK already initialized.")
         try:
             firebase_bucket = storage.bucket(app=firebase_admin.get_app())
+            db = firestore.client(database_id="prompts-saved")
+            print("Successfully connected to existing Firebase services")
         except Exception as e:
-            print(f"Error getting existing Firebase bucket: {e}")
-            # raise e
-            return  # IMPORTANT: Exit the function on error
+            print(f"Error getting existing Firebase services: {e}")
 
 
 def gen_image(prompt: str):
@@ -245,6 +326,136 @@ def static_files(filename):
     """Serve static files (like CSS, JS)."""
     return send_from_directory('static', filename)
 
+@app.route('/get_saved_prompts', methods=['GET'])
+def get_saved_prompts():
+    """
+    Endpoint to fetch all saved prompts from Firebase database
+    Returns prompts in format suitable for frontend display
+    """
+    try:
+        if not db:
+            return jsonify({
+                'success': False,
+                'message': 'Database connection not available',
+                'prompts': []
+            }), 500
+
+        # Get all saved prompts from the agent_responses collection
+        agent_responses_ref = db.collection('agent_responses')
+        docs = agent_responses_ref.order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+        
+        prompts_list = []
+        
+        for doc in docs:
+            doc_data = doc.to_dict()
+            
+            # Handle Firestore timestamp conversion
+            created_at = doc_data.get('created_at')
+            if created_at:
+                # Convert Firestore timestamp to ISO string for JavaScript
+                if hasattr(created_at, 'timestamp'):
+                    # It's a Firestore timestamp object
+                    created_at_iso = created_at.isoformat()
+                elif hasattr(created_at, 'seconds'):
+                    # It's a timestamp dict with seconds and nanoseconds
+                    import datetime
+                    created_at_iso = datetime.datetime.fromtimestamp(created_at.seconds).isoformat()
+                else:
+                    # Fallback - assume it's already a datetime or string
+                    created_at_iso = str(created_at)
+            else:
+                # Use current time as fallback
+                from datetime import datetime
+                created_at_iso = datetime.now().isoformat()
+            
+            # Extract relevant fields
+            prompt_data = {
+                'id': doc.id,
+                'agent_name': doc_data.get('agent_name', 'Unknown Agent'),
+                'response_content': doc_data.get('response_content', ''),
+                'created_at': created_at_iso,  # Send as ISO string
+                'prompt_text': doc_data.get('prompt_text', ''),  # If you store original prompts
+            }
+            
+            prompts_list.append(prompt_data)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Found {len(prompts_list)} saved prompts',
+            'prompts': prompts_list
+        })
+        
+    except Exception as e:
+        print(f"Error fetching saved prompts: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching saved prompts: {str(e)}',
+            'prompts': []
+        }), 500
+
+
+@app.route('/get_prompt/<prompt_id>', methods=['GET'])
+def get_specific_prompt(prompt_id):
+    """
+    Endpoint to fetch a specific prompt by its document ID
+    """
+    try:
+        if not db:
+            return jsonify({
+                'success': False,
+                'message': 'Database connection not available'
+            }), 500
+
+        # Get specific document
+        doc_ref = db.collection('agent_responses').document(prompt_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            return jsonify({
+                'success': False,
+                'message': 'Prompt not found'
+            }), 404
+            
+        doc_data = doc.to_dict()
+        
+        # Handle Firestore timestamp conversion
+        created_at = doc_data.get('created_at')
+        if created_at:
+            # Convert Firestore timestamp to ISO string for JavaScript
+            if hasattr(created_at, 'timestamp'):
+                # It's a Firestore timestamp object
+                created_at_iso = created_at.isoformat()
+            elif hasattr(created_at, 'seconds'):
+                # It's a timestamp dict with seconds and nanoseconds
+                import datetime
+                created_at_iso = datetime.datetime.fromtimestamp(created_at.seconds).isoformat()
+            else:
+                # Fallback - assume it's already a datetime or string
+                created_at_iso = str(created_at)
+        else:
+            # Use current time as fallback
+            from datetime import datetime
+            created_at_iso = datetime.now().isoformat()
+        
+        prompt_data = {
+            'id': doc.id,
+            'agent_name': doc_data.get('agent_name', 'Unknown Agent'),
+            'response_content': doc_data.get('response_content', ''),
+            'created_at': created_at_iso,  # Send as ISO string
+            'prompt_text': doc_data.get('prompt_text', ''),
+        }
+        
+        return jsonify({
+            'success': True,
+            'prompt': prompt_data
+        })
+        
+    except Exception as e:
+        print(f"Error fetching specific prompt: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching prompt: {str(e)}'
+        }), 500
 if __name__ == '__main__':
-    initialize_firebase()  # Initialize Firebase (if you want to use it for storage)
+    initialize_firebase()  # Initialize Firebase (for both storage and database)
     app.run(debug=True) #, host='0.0.0.0'

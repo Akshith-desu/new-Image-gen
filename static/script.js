@@ -1,4 +1,4 @@
-// Improved client-side code for the Gemini Image Generator with Prompt History and Download Functionality
+// Updated client-side code for the Gemini Image Generator with Firebase Database Integration
 
 document.addEventListener('DOMContentLoaded', function() {
     const generateBtn = document.getElementById('generateBtn');
@@ -15,9 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Variables to store current image data for download
     let currentImageData = null;
     let currentFilename = null;
+    let savedPrompts = []; // Store fetched prompts
 
-    // Load existing prompt history from localStorage
-    loadPromptHistory();
+    // Load saved prompts from Firebase database on page load
+    loadSavedPrompts();
 
     // Show status message function
     function showStatus(message, type) {
@@ -40,85 +41,143 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Function to save prompt to history
-    function savePromptToHistory(prompt) {
-        // Don't save empty prompts
-        if (!prompt.trim()) return;
-        
-        // Get existing history or initialize empty array
-        let history = JSON.parse(localStorage.getItem('promptHistory') || '[]');
-        
-        // Create new history item with timestamp
-        const newItem = {
-            prompt: prompt,
-            timestamp: new Date().toISOString()
-        };
-        
-        // Add to beginning of array (most recent first)
-        history.unshift(newItem);
-        
-        // Keep only the most recent 50 prompts
-        if (history.length > 50) {
-            history = history.slice(0, 50);
+    // Function to fetch saved prompts from Firebase
+    async function loadSavedPrompts() {
+        try {
+            // Show loading in sidebar
+            promptHistory.innerHTML = '<div class="empty-history">Loading saved prompts...</div>';
+            
+            // Make request to your backend endpoint
+            const response = await fetch('/get_saved_prompts', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            if (data.success && data.prompts) {
+                savedPrompts = data.prompts;
+                displaySavedPrompts();
+            } else {
+                promptHistory.innerHTML = '<div class="empty-history">No saved prompts found</div>';
+            }
+            
+        } catch (error) {
+            console.error('Error loading saved prompts:', error);
+            promptHistory.innerHTML = '<div class="empty-history">Error loading prompts</div>';
         }
-        
-        // Save back to localStorage
-        localStorage.setItem('promptHistory', JSON.stringify(history));
-        
-        // Update the UI
-        loadPromptHistory();
     }
 
-    // Function to load and display prompt history
-    function loadPromptHistory() {
-        const history = JSON.parse(localStorage.getItem('promptHistory') || '[]');
-        
+    // Function to display saved prompts in the sidebar
+    // Function to display saved prompts in the sidebar
+    function displaySavedPrompts() {
         // Clear current history display
         promptHistory.innerHTML = '';
         
-        if (history.length === 0) {
-            promptHistory.innerHTML = '<div class="empty-history">No prompt history yet</div>';
+        if (savedPrompts.length === 0) {
+            promptHistory.innerHTML = '<div class="empty-history">No saved prompts yet</div>';
             return;
         }
         
-        // Add each history item to the sidebar
-        history.forEach(item => {
+        // Add each saved prompt to the sidebar
+        savedPrompts.forEach((item, index) => {
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             
-            // Format the timestamp
-            const date = new Date(item.timestamp);
-            const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+            // Extract agent name and created date
+            const agentName = item.agent_name || 'Unknown Agent';
+            
+            // Handle different timestamp formats more robustly
+            let createdAt;
+            let formattedDate = 'Unknown Date';
+            
+            try {
+                if (item.created_at) {
+                    // Try different parsing methods
+                    if (typeof item.created_at === 'string') {
+                        // If it's an ISO string, parse it directly
+                        createdAt = new Date(item.created_at);
+                    } else if (item.created_at.seconds) {
+                        // If it's a Firestore timestamp object with seconds
+                        createdAt = new Date(item.created_at.seconds * 1000);
+                    } else if (typeof item.created_at === 'number') {
+                        // If it's already a timestamp
+                        createdAt = new Date(item.created_at);
+                    } else {
+                        // Try to parse it as-is
+                        createdAt = new Date(item.created_at);
+                    }
+                    
+                    // Check if the date is valid
+                    if (!isNaN(createdAt.getTime())) {
+                        formattedDate = `${createdAt.toLocaleDateString()} ${createdAt.toLocaleTimeString()}`;
+                    } else {
+                        console.warn('Invalid date for item:', item);
+                        formattedDate = 'Invalid Date';
+                    }
+                } else {
+                    formattedDate = 'No Date';
+                }
+            } catch (error) {
+                console.error('Error parsing date:', error, 'for item:', item);
+                formattedDate = 'Date Error';
+            }
+            
+            // Create preview of response content (first 80 characters)
+            const contentPreview = item.response_content 
+                ? (item.response_content.length > 80 
+                   ? item.response_content.substring(0, 80) + '...' 
+                   : item.response_content)
+                : 'No content available';
             
             historyItem.innerHTML = `
-                ${item.prompt}
+                <div style="font-weight: bold; color: #3498db; margin-bottom: 2px;">${agentName}</div>
+                <div style="font-size: 0.85em; margin-bottom: 4px;">${contentPreview}</div>
                 <span class="timestamp">${formattedDate}</span>
             `;
             
-            // Add click event to use this prompt
+            // Add click event to load this prompt into the input field
             historyItem.addEventListener('click', function() {
-                promptInput.value = item.prompt;
-                // Optionally auto-generate a filename from the prompt
-                if (!filenameInput.value) {
-                    filenameInput.value = item.prompt.substring(0, 20)
-                        .replace(/[^\w\s-]/g, '')
-                        .trim()
-                        .replace(/\s+/g, '_')
-                        .toLowerCase();
+                promptInput.value = item.response_content || '';
+                
+                // Optionally auto-generate a filename from the agent name and timestamp
+                if (!filenameInput.value && createdAt && !isNaN(createdAt.getTime())) {
+                    const timestamp = createdAt.toISOString().slice(0, 10); // YYYY-MM-DD format
+                    filenameInput.value = `${agentName.replace(/\s+/g, '_').toLowerCase()}_${timestamp}`;
                 }
+                
+                // Highlight selected item
+                document.querySelectorAll('.history-item').forEach(item => {
+                    item.style.backgroundColor = '';
+                });
+                historyItem.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                
+                // Show success message
+                showStatus(`Loaded prompt from ${agentName}`, 'success');
             });
             
             promptHistory.appendChild(historyItem);
         });
     }
 
-    // Clear history button
+    // Refresh prompts button functionality (repurpose clear button)
     clearHistoryBtn.addEventListener('click', function() {
-        if (confirm('Are you sure you want to clear your prompt history?')) {
-            localStorage.removeItem('promptHistory');
-            loadPromptHistory();
+        // Change this to refresh prompts instead of clearing
+        if (confirm('Refresh saved prompts from database?')) {
+            loadSavedPrompts();
         }
     });
+
+    // Update the clear button text and icon
+    clearHistoryBtn.innerHTML = '<span>↻</span>';
+    clearHistoryBtn.title = 'Refresh Saved Prompts';
 
     // Function to download image
     function downloadImage() {
@@ -187,9 +246,6 @@ document.addEventListener('DOMContentLoaded', function() {
         loadingSpinner.style.display = 'block';
 
         try {
-            // Save this prompt to history before making the request
-            savePromptToHistory(prompt);
-            
             // Make the request with proper headers and error handling
             const response = await fetch('/generate_and_upload', {
                 method: 'POST',
@@ -294,6 +350,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     textResponse.style.marginTop = '10px';
                     statusMessage.appendChild(textResponse);
                 }
+
+                // Refresh the saved prompts after successful generation
+                // (in case the new prompt was saved to database)
+                setTimeout(() => {
+                    loadSavedPrompts();
+                }, 1000);
+                
             } else {
                 loadingSpinner.style.display = 'none';
                 showStatus(`Error: ${data.message}`, 'error');
