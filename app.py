@@ -68,7 +68,7 @@ def initialize_firebase():
                 print(f"ERROR initializing Firebase with Secret Manager credentials: {str(e)}")
                 print("Attempting to initialize Firebase with service account file.")
                 try:
-                    cred = credentials.Certificate("service_account_key.json")
+                    cred = credentials.Certificate("/etc/secrets/service_account_key.json")
                     firebase_app = initialize_app(
                         cred,
                         {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
@@ -89,7 +89,8 @@ def initialize_firebase():
         else:
             print("Secret Manager credentials not available. Attempting service account file.")
             try:
-                cred = credentials.Certificate("service_account_key.json")
+                cred = credentials.Certificate("/etc/secrets/service_account_key.json")
+
                 firebase_app = initialize_app(
                     cred,
                     {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
