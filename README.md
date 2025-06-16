@@ -95,36 +95,6 @@ A Flask-based web application that generates images using Google's Gemini 2.0 Fl
 └── render.yaml          # Render deployment config
 ```
 
-## API Endpoints
-
-### `POST /generate_and_upload`
-
-Generates an image from a text prompt.
-
-**Request Body:**
-
-```json
-{
-  "prompt": "Your image description here",
-  "filename": "optional_filename"
-}
-```
-
-**Response:**
-
-```json
-{
-  "status": "success",
-  "message": "Image generated successfully!",
-  "image_data": "base64_encoded_image_data",
-  "text_response": "Optional text from Gemini"
-}
-```
-
-### `POST /generate_image`
-
-Legacy endpoint for image generation (returns base64 data only).
-
 ## Configuration
 
 ### Environment Variables
