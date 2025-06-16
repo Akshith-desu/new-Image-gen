@@ -453,6 +453,9 @@ def get_specific_prompt(prompt_id):
             'success': False,
             'message': f'Error fetching prompt: {str(e)}'
         }), 500
+
+initialize_firebase()
+
 if __name__ == '__main__':
-    initialize_firebase()  # Initialize Firebase (for both storage and database)
+     # Initialize Firebase (for both storage and database)
     app.run(debug=True) #, host='0.0.0.0'
