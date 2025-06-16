@@ -52,84 +52,81 @@ def initialize_firebase():
         credentials_json_string = None
         cred = None
 
-        # Try to get credentials from Secret Manager first
-        if PROJECT_ID and SECRET_ID and SECRET_VERSION_ID:
-            credentials_json_string = access_secret_version(PROJECT_ID, SECRET_ID, SECRET_VERSION_ID)
-
-        if credentials_json_string:
+        # Step 1: Try to use base64 credentials from Render env
+        if "FIREBASE_CREDS_B64" in os.environ:
+            print("🔐 Using base64 credentials from FIREBASE_CREDS_B64...")
             try:
-                cred = credentials.Certificate(json.loads(credentials_json_string))
+                decoded = base64.b64decode(os.environ["FIREBASE_CREDS_B64"])
+                credentials_dict = json.loads(decoded)
+                cred = credentials.Certificate(credentials_dict)
                 firebase_app = initialize_app(
                     cred,
-                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.appspot.com'},
                 )
-                print("Successfully initialized Firebase with Secret Manager credentials.")
+                print("✅ Firebase initialized using FIREBASE_CREDS_B64")
             except Exception as e:
-                print(f"ERROR initializing Firebase with Secret Manager credentials: {str(e)}")
-                print("Attempting to initialize Firebase with service account file.")
+                print(f"❌ Failed to decode FIREBASE_CREDS_B64: {e}")
+                cred = None
+
+        # Step 2: Try Secret Manager (if base64 not used or failed)
+        elif PROJECT_ID and SECRET_ID and SECRET_VERSION_ID:
+            print("🔐 Attempting Firebase init using Google Secret Manager...")
+            credentials_json_string = access_secret_version(PROJECT_ID, SECRET_ID, SECRET_VERSION_ID)
+            if credentials_json_string:
                 try:
-                    cred = credentials.Certificate("service_account_key.json")
+                    cred = credentials.Certificate(json.loads(credentials_json_string))
                     firebase_app = initialize_app(
                         cred,
-                        {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                        {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.appspot.com'},
                     )
-                    print("Successfully initialized Firebase with service account file.")
-                except Exception as e_file:
-                    print(f"ERROR initializing Firebase with service account file: {str(e_file)}")
-                    print("Attempting to initialize Firebase with application default credentials.")
-                    try:
-                        firebase_app = initialize_app({
-                            'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'
-                        })
-                        print("Successfully initialized Firebase with application default credentials.")
-                    except Exception as e_default:
-                        print(f"ERROR initializing Firebase with application default credentials: {str(e_default)}")
-                        print("Firebase initialization failed entirely.")
-                        return
-        else:
-            print("Secret Manager credentials not available. Attempting service account file.")
+                    print("✅ Firebase initialized using Secret Manager credentials.")
+                except Exception as e:
+                    print(f"❌ Failed to init Firebase with Secret Manager: {str(e)}")
+        
+        # Step 3: Fallback to local file
+        if cred is None:
+            print("⚠️ Falling back to local service_account_key.json...")
             try:
                 cred = credentials.Certificate("service_account_key.json")
                 firebase_app = initialize_app(
                     cred,
-                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'},
+                    {'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.appspot.com'},
                 )
-                print("Successfully initialized Firebase with service account file.")
+                print("✅ Firebase initialized using local service_account_key.json")
             except Exception as e_file:
-                print(f"ERROR initializing Firebase with service account file: {str(e_file)}")
-                print("Attempting to initialize Firebase with application default credentials.")
+                print(f"❌ Failed to use service_account_key.json: {str(e_file)}")
+                print("Attempting to initialize Firebase with application default credentials...")
                 try:
                     firebase_app = initialize_app({
-                        'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.firebasestorage.app'
+                        'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET') or 'image-gen-34b6b.appspot.com'
                     })
-                    print("Successfully initialized Firebase with application default credentials.")
+                    print("✅ Firebase initialized using application default credentials.")
                 except Exception as e_default:
-                    print(f"ERROR initializing Firebase with application default credentials: {str(e_default)}")
-                    print("Firebase initialization failed entirely.")
+                    print(f"❌ Firebase initialization failed completely: {str(e_default)}")
                     return
 
         # Initialize storage bucket
         try:
             firebase_bucket = storage.bucket(app=firebase_admin.get_app())
-            print("Successfully connected to Firebase Storage")
+            print("✅ Connected to Firebase Storage")
         except Exception as e:
-            print(f"Error getting Firebase bucket: {e}")
+            print(f"❌ Error getting Firebase bucket: {e}")
 
         # Initialize Firestore database
         try:
             db = firestore.client(database_id="prompts-saved")
-            print("Successfully connected to Firestore database")
+            print("✅ Connected to Firestore database")
         except Exception as e:
-            print(f"ERROR connecting to Firestore: {str(e)}")
+            print(f"❌ Error connecting to Firestore: {str(e)}")
             print("Firestore client could not be created.")
     else:
-        print("Firebase Admin SDK already initialized.")
+        print("ℹ️ Firebase already initialized.")
         try:
             firebase_bucket = storage.bucket(app=firebase_admin.get_app())
             db = firestore.client(database_id="prompts-saved")
-            print("Successfully connected to existing Firebase services")
+            print("✅ Connected to existing Firebase services")
         except Exception as e:
-            print(f"Error getting existing Firebase services: {e}")
+            print(f"❌ Error accessing existing Firebase services: {e}")
 
 
 def gen_image(prompt: str):
